@@ -42,3 +42,10 @@ TODO
 ### License
 
 See `./license.md`.
+
+### TODO
+
+- [ ] argparse etc.
+- [ ] provision script (sets up git hooks etc.)
+- [ ] tests ... how?
+- [ ] change control ... save version of tool used?

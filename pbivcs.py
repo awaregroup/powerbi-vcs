@@ -16,67 +16,51 @@ import json
 import re
 from io import BytesIO
 import ast
+from chardet import detect
+import struct
 
-import xml.dom.minidom
+#import xml.dom.minidom
+from lxml import etree
 import tempfile
 import os
 import xml.etree.ElementTree as ET
 from xml.parsers.expat import ExpatError
 import xml.parsers.expat.errors as xmlerrors
 import shutil
+from decimal import Decimal
+
+ENCODINGS = {
+    'DataModelSchema': 'utf-16-le',
+    'DiagramState': 'utf-16-le',
+    'Report/Layout': 'utf-16-le',
+    'Report/LinguisticSchema': 'utf-16-le',
+    '[Content_Types].xml': 'utf-8-sig'
+    }
 
 
-def tidy_xml(body):
 
-    # TODO: order elements alphabetically, where possible, to ensure consistent tidying
+# TODO: order elements alphabetically, where possible, to ensure consistent tidying
 
-    x = xml.dom.minidom.parseString(body)
 
+def xml_raw_to_vcs(b, enc, xml_declaration=True):
+    parser = etree.XMLParser(remove_blank_text=True)
     # if encoding specified, we need to do a hack as the 'encoding' attribute get's removed with toprettyxml (unless you specify it as an argument)
-    m = re.match('^\<\?xml [^\>]*encoding="([a-z0-9_\-]+)"', body)
-    out = None
+    m = re.match(b'(^.{,4}\<\?xml [^\>]*)encoding="[a-z0-9_\-]+"', b)
+    # TODO: check if enc != m
     if m:
-        enc = m.group(1)
-        out = x.toprettyxml(indent="  ", encoding=enc).decode(enc)
+        root = etree.fromstring(b, parser)
     else:
-        out = x.toprettyxml(indent="  ")
+        root = etree.fromstring(b.decode(enc), parser)
+    return etree.tostring(root, pretty_print=True, xml_declaration=xml_declaration, encoding='utf-8')
 
-    # let's just check all is OK:
-    """
-    pt = ""
-    rt = ""
-    print(body[:100])
-    minified = re.sub('\>\n[\t ]+\<', '><', out).replace('\n', '').replace('/>', ' />')
-    for l, (raw, parsed) in enumerate(zip(body, minified)):
-        pt += parsed
-        rt += raw
-        if (raw != parsed):
-            print("failed at " + str(l))
-            print(body[l-50:l+50])
-            print(minified[l-50:l+50])
-            break
-    #print(x.toprettyxml(indent="", newl="", encoding='utf-8'))
-    #print(s[xmlstart:xmlend])
-    assert minified == body
-    """
-    return out      
+def xml_vcs_to_raw(b, enc, xml_declaration=True):
+        
+    parser = etree.XMLParser(remove_blank_text=True)
+    root = etree.fromstring(b, parser)
+    lxml_enc = enc.replace('-le', '').replace('-sig', '')
+    return etree.tostring(root, pretty_print=False, xml_declaration=xml_declaration, encoding=lxml_enc).decode(lxml_enc).encode(enc)
 
-def untidy_xml(str):
-
-    x = xml.dom.minidom.parseString(str)
-
-    # if encoding specified, we need to do a hack as the 'encoding' attribute get's removed with toprettyxml (unless you specify it as an argument)
-    m = re.match('^\<\?xml [^\>]*encoding="([a-z0-9_\-]+)"', str)
-    out = None
-    if m:
-        enc = m.group(1)
-        return x.toprettyxml(indent="", newl="", encoding=enc).decode(enc)
-    return x.toprettyxml(indent="", newl="")
-
-def _tidy_json_str(v):
-
-    # TODO: order elements alphabetically, where possible, to ensure consistent tidying
-    
+def jsonify_embedded_json(v):    
     if isinstance(v, str):
         try:
             d = json.loads(v)
@@ -87,33 +71,28 @@ def _tidy_json_str(v):
         except Exception as e:
             return v
     elif isinstance(v, dict):
-        return {kk: _tidy_json_str(vv) for kk, vv in v.items()}
+        return {kk: jsonify_embedded_json(vv) for kk, vv in v.items()}
     elif isinstance(v, list):
-        return [_tidy_json_str(vv) for vv in v]
+        return [jsonify_embedded_json(vv) for vv in v]
     else:
         return v
     
-def _untidy_json_str(v):
-
+def undo_jsonify_embedded_json(v):
     if isinstance(v, dict):
         if len(v) == 1 and '__pbiextracted__' in v:
-            return json.dumps(v['__pbiextracted__'])
-        return {kk: _untidy_json_str(vv) for kk, vv in v.items()}
+            return json.dumps(v['__pbiextracted__'], separators=(',', ':'), ensure_ascii=False)
+        return {kk: undo_jsonify_embedded_json(vv) for kk, vv in v.items()}
     elif isinstance(v, list):
-        return [_untidy_json_str(vv) for vv in v]
+        return [undo_jsonify_embedded_json(vv) for vv in v]
     else:
         return v
 
-def tidy_json(body):
+# sometimes the json has big JSON strings inside the JSON - and these obviously don't get prettified nicely. So, a hack:    
+def json_raw_to_vcs(raw):
+    return json.dumps(jsonify_embedded_json(json.loads(raw)), indent=2, ensure_ascii=False)
 
-    # sometimes the json has big JSON strings inside the JSON - and these obviously don't get prettified nicely. So, a hack:
-    d = _tidy_json_str(json.loads(body))
-    return json.dumps(d, indent=2)
-
-def untidy_json(str):
-
-    d = _untidy_json_str(json.loads(str))
-    return json.dumps(d)
+def json_vcs_to_raw(vcs):
+    return json.dumps(undo_jsonify_embedded_json(json.loads(vcs)), separators=(',', ':'), ensure_ascii=False)
 
 def extract_pbit(fpath):
     # TODO: check ends in pbit
@@ -125,26 +104,31 @@ def extract_pbit(fpath):
         shutil.rmtree(outdir)
     os.mkdir(outdir)
 
+    order = []
+
     with zipfile.ZipFile(fpath, compression=zipfile.ZIP_DEFLATED) as zd:
 
         # read items (in the order they appear in the archive)
         for zf in zd.infolist():
             name = zf.filename
+            order.append(name)
             outfile = os.path.join(outdir, name)
             os.makedirs(os.path.dirname(outfile), exist_ok=True) # create folder if needed
             
             if name in ('DataModelSchema', 'DiagramState', 'Report/Layout'):
-                out = tidy_json(zd.read(name).decode('utf-16'))
+                out = json_raw_to_vcs(zd.read(name).decode(ENCODINGS[name]))
                 open(outfile, 'w').write(out)
             elif name in ('Report/LinguisticSchema', '[Content_Types].xml'):
-                out = tidy_xml(zd.read(name).decode('utf-8-sig'))
-                open(outfile, 'w').write(out)
+                out = xml_raw_to_vcs(zd.read(name), ENCODINGS[name], xml_declaration=(name != 'Report/LinguisticSchema'))
+                open(outfile, 'wb').write(out)
             elif name in ('SecurityBindings', 'Settings', 'Version') or name.startswith("Report/StaticResources"):
                 # spit these straight back out:
                 open(outfile, 'wb').write(zd.read(name))
             elif name == 'Metadata':
                 # OK, this content is nearly readable, apart from a few stray bytes. To aid merges/diffs, we'll split into into multiple lines.
                 s = repr(zd.open(name).read())
+                if "\n" in s:
+                    raise ValueError("TODO: '\n' is used as a terminator but already exists in string! Someone needs to write some code to dynamically pick the (possibly multi-byte) terminator ...")
                 splat = re.split('(\\\\x[0-9a-f]{2})([^\\\\x])', s)
                 out = ''
                 for i, spl in enumerate(splat):
@@ -154,169 +138,157 @@ def extract_pbit(fpath):
                 open(outfile, 'w').write(out)
             elif name == 'DataMashup':
 
-                # OK, this one is a bit funny: from what we can make of it, it's got another zip archive in the head, then a short XML snippet, then some bytes, then a longer XML, then some more bytes.
-                #   NOTE: we're assuming that structure from now on, i.e. we're not going to handle 3 xmls snippets until we see an example of them.
-                # We'll extract the archive separately, but just keep the tail as-is, except for formatting the xml nicely and ascii-ing the bytes. (That is, we don't split them out. We keep them mixed, but make them human readable, and have a specific format so we can undo everything.)
-                
-                s = zd.read(name)
-                sl = len(s)
-                
-                # strip out xml bits:
-                xmls = []
-                for xmlstart in sorted(list(set([m.start() for m in re.finditer(b'<\?xml ', s)]))):
-                    
-                    # use incremental parser, and keep adding characters until it bails, then remove characters until we get a nice parse:
-                    # NOTE: if there was a nice way of mapping parsed elements to original source, we could avoid feeding character by character, and just feed the entire thing, and then find the end location of the last successfully parsed element before it bailed. Unfortunately, I can't find that.
-                    # NOTE: you could provide a BytesIO wrapper and use tell() - but that only works if buffer size = 1, which is the same as passing character by character anyway.
-                    # NOTE: we could optimize this somewhat by doing a binary search (e.g. if first half parses fine, no need to do it character-by-character) or similar ... but for now I can't be bothered.
-                    xmlend = xmlstart                    
-                    parser = ET.XMLPullParser(['end'])
-                    for c in s[xmlstart:]:
-                        parser.feed(chr(c))
-                        try:
-                            list(parser.read_events())
-                            xmlend += 1
-                        except (ET.ParseError, ExpatError) as e:
-                            msg = xmlerrors.messages[e.code]
-                            if msg == xmlerrors.XML_ERROR_JUNK_AFTER_DOC_ELEMENT:
-                                pass
-                            elif msg == xmlerrors.XML_ERROR_INVALID_TOKEN:
-                                pass
-                            else:
-                                print(e)
-                                raise ValueError("TODO")
-                            break
-                    if xmlend >= sl:
-                        raise ValueError("TODO")
-                    
-                    # remove any trailing characters until we pass:
-                    xmlstr = s[xmlstart:xmlend]
-                    decoded = None
-                    while len(xmlstr) > 0:
-                        try:
-                            decoded = tidy_xml(xmlstr.decode('utf-8'))
-                            break
-                        except Exception as e:
-                            xmlstr = xmlstr[:-1]
-                    
-                    if decoded is None:
-                        raise ValueError("TODO")
-                    
-                    xmls.append({
-                        'start': xmlstart,
-                        'end': xmlend,
-                        'tidyxml': decoded
-                        })
-                
-                assert len(xmls) == 2, "this has been designed assuming only two xml chunks ..."
-                
+                # format:
+                #   - 4 null bytes
+                #   - 4 bytes representing little-endian int for length of next zip
+                #   - bytes (of length above) as zip
+                #   - 4 bytes representing little-endian int for length of next xml
+                #   - utf-8-sig xml of above length
+                #   - 4 bytes representing little-endian int - which seems to be 34 more than the one two below:
+                #   - 4 null bytes
+                #   - 4 bytes representing little-endian int for length of next xml
+                #   - xml of this length
+                #   - not sure what the remainder is ...
+
+                b = zd.read(name)
+                if b[:4] != b'\x00\x00\x00\x00':
+                    raise ValueError("TODO")
+                len1 = int.from_bytes(b[4:8], byteorder="little")
+                start1 = 8
+                end1 = start1 + len1
+                zip1 = b[start1:end1]
+                start2 = end1 + 4
+                len2 = int.from_bytes(b[end1:start2], byteorder="little")
+                end2 = start2 + len2
+                xml1 = b[start2:end2]
+                b8 = b[end2:end2+8]
+                start3 = end2 + 12
+                len3 = int.from_bytes(b[end2 + 8: start3], byteorder="little")
+                if int.from_bytes(b[end2:end2+4], "little") - len3 != 34:
+                    raise ValueError("TODO")
+                end3 = start3 + len3
+                xml2 = b[start3:end3]
+                extra = b[end3:]
+                                
                 # extract header zip:
-                with zipfile.ZipFile(BytesIO(s[:xmls[0]['start']])) as zd2:
+                with zipfile.ZipFile(BytesIO(zip1)) as zd2:
+                    order2 = []
                     # read items (in the order they appear in the archive)
                     for name2 in zd2.namelist():
+                        order2.append(name2)
                         outfile = os.path.join(outdir, 'DataMashup', name2)
                         os.makedirs(os.path.dirname(outfile), exist_ok=True) # create folder if needed
                         if name2.endswith('.xml'):
-                            out = tidy_xml(zd2.read(name2).decode('utf-8-sig'))
-                            open(outfile, 'w').write(out)
+                            out = xml_raw_to_vcs(zd2.read(name2), 'utf-8-sig')
+                            open(outfile, 'wb').write(out)
                         elif name2 == 'Formulas/Section1.m':
                             # it's good:
                             open(outfile, 'wb').write(zd2.read(name2))
                         else:
                             raise ValueError("TODO")
+                
+                # write order:
+                open(os.path.join(outdir, 'DataMashup', ".zo"), 'w').write("\n".join(order2))
+
+                # now write the xmls and bytes between:
+                #open(os.path.join(outdir, 'DataMashup', "1.int"), 'wb').write(b[4:8])
+                open(os.path.join(outdir, 'DataMashup', "3.xml"), 'wb').write(xml_raw_to_vcs(xml1, 'utf-8-sig'))
+                open(os.path.join(outdir, 'DataMashup', "6.xml"), 'wb').write(xml_raw_to_vcs(xml2, 'utf-8-sig'))
+                open(os.path.join(outdir, 'DataMashup', "7.bytes"), 'wb').write(extra)
+                
             else:
                 raise ValueError(name + " is not an expected member of a pbit archive!")
+
+            
+            # write order:
+            open(os.path.join(outdir, ".zo"), 'w').write("\n".join(order))
 
 def compress_pbit(fpath):
 
     compressed_path = fpath + '.extract'
 
     # TODO: check all paths exists
+
+    # get order
+    order = open(os.path.join(compressed_path, ".zo")).read().split("\n")
     
-    with zipfile.ZipFile(fpath + '2', mode='w', compression=zipfile.ZIP_DEFLATED) as zd:
+    with zipfile.ZipFile(fpath + '.recompressed', mode='w', compression=zipfile.ZIP_DEFLATED) as zd:
 
-        for name in ('DataModelSchema', 'DiagramState', 'Report/Layout'):
-            out = untidy_json(open(os.path.join(compressed_path, name.replace("/", os.path.sep)), 'r').read()).encode('utf-16')
-            #print(out)
-            with zd.open(name, 'w') as z:
-                z.write(out)
-        for name in ('Report/LinguisticSchema', '[Content_Types].xml'):
-            out = untidy_xml(open(os.path.join(compressed_path, name.replace("/", os.path.sep))).read()).encode('utf-8-sig')
-            with zd.open(name, 'w') as z:
-                z.write(out)
-        for name in ('SecurityBindings', 'Settings', 'Version'):
-            out = open(os.path.join(compressed_path, name.replace("/", os.path.sep)), 'rb').read()
-            with zd.open(name, 'w') as z:
-                z.write(out)
-
-        # metadata
-        out = open(os.path.join(compressed_path, 'MetaData')).read()
-        out = out.replace('\n', '')
-        out = ast.literal_eval(out)
-        with zd.open(name, 'w') as z:
-            z.write(out)
-
-        # datamashup
-
-        """
-                # OK, this one is a bit funny: from what we can make of it, it's got another zip archive in the head, then a short XML snippet, then some bytes, then a longer XML, then some more bytes.
-                #   NOTE: we're assuming that structure from now on, i.e. we're not going to handle 3 xmls snippets until we see an example of them.
-                # We'll extract the archive separately, but just keep the tail as-is, except for formatting the xml nicely and ascii-ing the bytes. (That is, we don't split them out. We keep them mixed, but make them human readable, and have a specific format so we can undo everything.)
-                
-                s = zd.read(name)
-                sl = len(s)
-                
-                # strip out xml bits:
-                xmls = []
-                for xmlstart in sorted(list(set([m.start() for m in re.finditer(b'<\?xml ', s)]))):
-                    
-                    # use incremental parser, and keep adding characters until it bails:
-                    # NOTE: if there was a nice way of mapping parsed elements to original source, we could avoid feeding character by character, and just feed the entire thing, and then find the end location of the last successfully parsed element before it bailed. Unfortunately, I can't find that.
-                    # NOTE: you could provide a BytesIO wrapper and use tell() - but that only works if buffer size = 1, which is the same as passing character by character anyway.
-                    # NOTE: we could optimize this somewhat by doing a binary search (e.g. if first half parses fine, no need to do it character-by-character) or similar ... but for now I can't be bothered.
-                    xmlend = xmlstart                    
-                    parser = ET.XMLPullParser(['end'])
-                    for c in s[xmlstart:]:
-                        parser.feed(chr(c))
-                        try:
-                            list(parser.read_events())
-                        except Exception as e:
-                            break
-                        xmlend += 1
-                    if xmlend >= sl:
-                        raise ValueError("TODO")
-
-                    # cool, now parse it fully and pretty print it:
-                    xmls.append({
-                        'start': xmlstart,
-                        'end': xmlend,
-                        'tidyxml': tidy_xml(s[xmlstart:xmlend].decode('utf-8'))
-                        })
-                
-                assert len(xmls) == 2, "this has been designed assuming only two xml chunks ..."
-                
-                # extract header zip:
-                with zipfile.ZipFile(BytesIO(s[:xmls[0]['start']])) as zd2:
-                    # read items (in the order they appear in the archive)
-                    for name2 in zd2.namelist():
+        for name in order:
+            if name in ('DataModelSchema', 'DiagramState', 'Report/Layout'):
+                out = json_vcs_to_raw(open(os.path.join(compressed_path, name.replace("/", os.path.sep)), 'r').read()).encode(ENCODINGS[name])
+                #print(out)
+                with zd.open(name, 'w') as z:
+                    z.write(out)
+            elif name in ('Report/LinguisticSchema', '[Content_Types].xml'):
+                out = xml_vcs_to_raw(open(os.path.join(compressed_path, name.replace("/", os.path.sep)), 'rb').read(), ENCODINGS[name], xml_declaration=(name != 'Report/LinguisticSchema'))
+                with zd.open(name, 'w') as z:
+                    z.write(out)
+            elif name in ('SecurityBindings', 'Settings', 'Version') or name.startswith("Report/StaticResources"):
+                out = open(os.path.join(compressed_path, name.replace("/", os.path.sep)), 'rb').read()
+                with zd.open(name, 'w') as z:
+                    z.write(out)
+            elif name == "Metadata":
+                out = open(os.path.join(compressed_path, name)).read()
+                out = out.replace('\n', '')
+                out = ast.literal_eval(out)
+                with zd.open(name, 'w') as z:
+                    z.write(out)
+            elif name == "DataMashup":
+                b = BytesIO()
+                with zipfile.ZipFile(b, mode='w', compression=zipfile.ZIP_DEFLATED) as zd2:
+                    order2 = open(os.path.join(compressed_path, "DataMashup", ".zo")).read().split("\n")
+                    for name2 in order2:
                         if name2.endswith('.xml'):
-                            print(zd2.read(name2))
-                            out = tidy_xml(zd2.read(name2).decode('utf-8-sig'))
-                            open(os.path.join(outdir, 'DataMashup', name2.replace("/", os.path.sep)), 'w').write(out)
+                            out = xml_vcs_to_raw(open(os.path.join(compressed_path, "DataMashup", name2), 'rb').read(), enc='utf-8-sig')
                         elif name2 == 'Formulas/Section1.m':
-                            # it's good:
-                            open(os.path.join(outdir, 'DataMashup', name2.replace("/", os.path.sep)), 'wb').write(zd2.read(name2))
+                            out = open(os.path.join(compressed_path, "DataMashup", name2), 'rb').read()
                         else:
                             raise ValueError("TODO")
+                        with zd2.open(name2, 'w') as z2:
+                            z2.write(out)
+
+                # add stuff:
+                with zd.open(name, 'w') as z:
+
+                    # write header
+                    z.write(b'\x00\x00\x00\x00')
+
+                    # write zip
+                    #priorziplen = open(os.path.join(compressed_path, 'DataMashup', "1.int"), 'rb').read()
+                    #if priorziplen != thisziplen:
+                    #    raise ValueError("TODO")
+                        #z.write(struct.pack("<i", thisziplen)
+                    z.write(struct.pack("<i", b.tell()))
+                    b.seek(0)
+                    z.write(b.read())
+
+                    # write first xml:
+                    xmlb = xml_vcs_to_raw(open(os.path.join(compressed_path, 'DataMashup', "3.xml"), 'rb').read(), 'utf-8-sig')
+                    z.write(struct.pack("<i", len(xmlb)))
+                    z.write(xmlb)
+
+                    # write second xml:
+                    xmlb = xml_vcs_to_raw(open(os.path.join(compressed_path, 'DataMashup', "6.xml"), 'rb').read(), 'utf-8-sig')
+                    z.write(struct.pack("<i", len(xmlb) + 34))
+                    z.write(b'\x00\x00\x00\x00')
+                    z.write(struct.pack("<i", len(xmlb)))
+                    z.write(xmlb)
+
+                    # write the rest:
+                    z.write(open(os.path.join(compressed_path, 'DataMashup', "7.bytes"), 'rb').read())
+
             else:
+                print(name)
                 raise ValueError("TODO")
-                """
+
 
 if __name__ == '__main__':
 
-    sampledir = 'D:/testing/samples'
+    sampledir = os.path.join(os.path.dirname(__name__), 'samples')
     for fname in os.listdir(sampledir):
         if fname.endswith(".pbit"):
             print(fname)
             extract_pbit(os.path.join(sampledir, fname))
-            #compress_pbit('Aware Col Demo.pbit')
+            compress_pbit(os.path.join(sampledir, fname))
+            break
