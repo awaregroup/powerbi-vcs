@@ -66,7 +66,7 @@ See `./license.md`.
 
 Sure you could do something like [zippey](https://bitbucket.org/sippey/zippey). However, I think (?) this requires you to map a single file (`*.pbit`) to a single other file (in whatever format). While you could do something like in zippey (concatenating them all etc.) it'd start getting messy (especially with it still containing binary content e.g. images), and I'm not a fan. I also don't really like the idea of using automated filters (at least until I know more about how these are used in git).
 
-### Why not automate with git hooks?
+#### Why not automate with git hooks?
 
 Firstly, git hooks aren't shared between repos. Not a major, just saying.
 

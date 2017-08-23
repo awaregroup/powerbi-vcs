@@ -146,11 +146,11 @@ class JSONConverter(Converter):
         return json.dumps(self._jsonify_embedded_json(json.loads(b.decode(self.encoding))), indent=2,
                          ensure_ascii=False, # so embedded e.g. copyright symbols don't be munged to unicode codes
                          sort_keys=self.SORT_KEYS
-                         ).encode(self.encoding)
+                         ).encode('utf-8')
 
     def vcs_to_raw(self, b):
         """ Converts vcs json to that used in pbit - mainly just minification """
-        return json.dumps(self._undo_jsonify_embedded_json(json.loads(b.decode(self.encoding))), separators=(',', ':'), ensure_ascii=False, sort_keys=self.SORT_KEYS).encode(self.encoding)
+        return json.dumps(self._undo_jsonify_embedded_json(json.loads(b.decode('utf-8'))), separators=(',', ':'), ensure_ascii=False, sort_keys=self.SORT_KEYS).encode(self.encoding)
 
 
 class MetadataConverter(Converter):

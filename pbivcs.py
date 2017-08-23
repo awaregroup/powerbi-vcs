@@ -89,6 +89,7 @@ def compress_pbit(compressed_dir):
 if __name__ == '__main__':
 
     sampledir = os.path.join(os.path.dirname(__name__), 'samples')
+
     for fname in os.listdir(sampledir):
         if fname.endswith(".pbit"):
             print(fname)
