@@ -13,13 +13,15 @@ This repo aims to improve this as much as possible (without tweaking Power BI it
 
 It abuses the fact that `*.pbi{tx}` files are (nearly) just (double) ZIP compressed folders which follow a specific structure.
 
-### What do I get?
+### What do I get (currently)?
 
 You have to manually export a `*.pbit` from your `*.pbix` (unless someones knows some more tricks?). Then
 
 - before you commit, you run a script which extracts your `*.pbit` into a git-friendly form, which is what's recorded in the repo (not the `*.pbi{tx}`).
 - this means diffs and merges can happen (within reason - you want be able to merge two complete rewrites, as you'd expect)
 - when you pull an update from the repo, the git-friendly form can be merged (and you can resolve any conflicts etc.). You then run a script to create a `*.pbit` from the git-friendly form, which you can then open with Power BI desktop as per usual.
+
+TODO: add example for the above.
 
 In addition:
 
@@ -31,12 +33,13 @@ In addition:
 
 - automation (at least for now):
 	- you still need to manually export a `*.pbit` from your `*.pbix`
-	- you have to run scripts before/after the git actions. If this solution proves to be robust, we may automate this somewhat with git hooks or filters.
+	- you have to run scripts before/after the git actions. If this solution proves to be robust, we may automate this somewhat with git hooks or filters, but I'm wary of the bugs these may introduce into the user experience.
 
 ### Roadmap
 
 - figure out how to export `*.pbit` from `*.pbix` automatically
-- support other VCS
+- support other VCS ...
+- some git utility scripts e.g. to remove old `*.pbix` from repo and rebuild it as if we'd been using this tool the whole way along (i.e. replace `*.pbit` with the extracted version so we can hence track diffs)
 - automate git somewhat with hooks or filters
 
 ### Contributing
@@ -50,9 +53,10 @@ See `./license.md`.
 ### TODO (before 'release')
 
 - [ ] argparse etc.
-- [ ] provision script (sets up git hooks etc.)
+- [ ] provision script that sets up given repo: provide git template .gitignore and .gitattribtes (e.g. to ignore `*.pbix` or smudge them to a checksum, and ignore changed `modifiedTime` etc. in diffs.
 - [ ] tests ... how?
 - [ ] change control ... save version of tool used?
+- [ ] configuration file that sets defaults
 - [ ] after compressing, test that the decompressed version is valid (by opening in Power BI Desktop)?
 - [ ] install instructions inc. conda environment
 
