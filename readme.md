@@ -13,27 +13,88 @@ This repo aims to improve this as much as possible (without tweaking Power BI it
 
 It abuses the fact that `*.pbi{tx}` files are (nearly) just (double) ZIP compressed folders which follow a specific structure.
 
+### Installation
+
+Install python (I recommend Anaconda if you're using Windows). Then
+
+```sh
+cd C:\tmp
+git clone https://github.com/kodonnell/powerbi-vcs
+cd powerbi-vcs
+pip install .
+```
+
+[TODO] how to add to path?
+
 ### What do I get (currently)?
 
-You have to manually export a `*.pbit` from your `*.pbix` (unless someones knows some more tricks?). Then
+Say you've just made some changes to your Power BI file `apples.pbix` and you want to add it to version control. First, you'll need to export it as a Power BI Template i.e. `apples.pbit`, and then extract it into a VCS-friendly format:
 
-- before you commit, you run a script which extracts your `*.pbit` into a git-friendly form, which is what's recorded in the repo (not the `*.pbi{tx}`).
-- this means diffs and merges can happen (within reason - you want be able to merge two complete rewrites, as you'd expect)
-- when you pull an update from the repo, the git-friendly form can be merged (and you can resolve any conflicts etc.). You then run a script to create a `*.pbit` from the git-friendly form, which you can then open with Power BI desktop as per usual.
+```sh
+pbivcs -x apples.pbit apples.pbit.vcs
+```
 
-TODO: add example for the above.
+will extract your `apples.pbit` into the VCS-friendly format at `apples.pbit.vcs`. If you choose, you can [TODO] automatically check that this will compress into a valid `pbit`. Then, for example
 
-In addition:
+```sh
+git commit -a -m "apples are so awesome"
+```
 
-- TODO: you'll get warnings about ...
+will (assuming you've set it up as outlined below):
+
+1. [TODO] check you haven't accidentally forgotten to export a new `pbit` from your `pbix`
+2. commit `apples.pbit.vcs` to git
+3. (optionally) ignore `apples.pbit` and `apples.pbix` or [TODO] replace them with chksums (or a link to a file store of all versions? depending on your CI. TODO: can we actually create an `apples.pbit.history` folder to contain these? This would ensure no `pbit` is ever over-written.)
+
+Now, suppose your colleague had also made a change to the same report. Then a `git pull` and `git diff` might show something like this:
+
+```sh
+...
+-           "value": "Apples are yummy",
++           "value": "Apples are awesome",
+...
+```
+
+and you can see that your colleague has just changed the title. There aren't any major conflicts, so you can happily `git merge` and merge your work.
+
+You then want to make another change, so you need to compress the VCS-friendly format back to your `pbit`, which is as easy as
+
+```sh
+pbivcs -c apples.pbit.vcs apples.pbit
+```
+
+(and yes, since you're super careful, you can control how overwrites etc. happen).
+
+### Other cool features
+
+
 - TODO: change control: we'll attempt to keep this as up-to-date with Power BI as possible. The version of this tool that was used will be saved in any extraction/compression process, to allow (in theory) this tool to work on a complete git history, regardless of the Power BI versions used. (Provided this tool always functioned.)
 - TODO: everything's configurable to your level of comfort (e.g. always overwrite files, or check first, etc.)
+- lots of configuration. There a built-in defaults (conservative safe ones), but you can also specify your own defaults (in a hierarchy of `.pbivcs.conf` files), as well as utilising environment variables, and command line arguments. See below [TODO]
 
 ### What don't I get?
 
-- automation (at least for now):
+- unthinking automation (at least for now):
 	- you still need to manually export a `*.pbit` from your `*.pbix`
 	- you have to run scripts before/after the git actions. If this solution proves to be robust, we may automate this somewhat with git hooks or filters, but I'm wary of the bugs these may introduce into the user experience.
+
+### Configuration
+
+We use [ConfigArgParse](https://pypi.python.org/pypi/ConfigArgParse), which means `pbivcs` has the following configurations:
+
+- built-in defaults (which tend to be safe and conservative)
+- your own `.pbivcs.conf` files
+- environment variables
+- command line arguments
+
+where each levels takes precedence over the one before. The main use is the `.pbivcs.conf` files which means you can customise it to behave as you want, without having to enter the options at the command line. The location of these files is such that they must be siblings of one of the elements on the path of you input file. E.g. if you run `pbivcs -x /path/to/my/file.pbit` then the following configuration files will be used (if they exist):
+
+- `/.pbivcs.conf`
+- `/path/.pbivcs.conf`
+- `/path/to/.pbivcs.conf`
+- `/path/to/my/.pbivcs.conf`
+
+where each one takes precendence over the one preceeding it. Usually this would mean you would set a global `.pbivcs.conf` at the root of your project, but means you can have further ones in different parts of the project if you want different behaviour for the odd report.
 
 ### Roadmap
 
@@ -56,9 +117,8 @@ See `./license.md`.
 - [ ] provision script that sets up given repo: provide git template .gitignore and .gitattribtes (e.g. to ignore `*.pbix` or smudge them to a checksum, and ignore changed `modifiedTime` etc. in diffs.
 - [ ] tests ... how?
 - [ ] change control ... save version of tool used?
-- [ ] configuration file that sets defaults
 - [ ] after compressing, test that the decompressed version is valid (by opening in Power BI Desktop)?
-- [ ] install instructions inc. conda environment
+- [ ] complete install instructions inc. conda environment
 
 ### Discussion
 
@@ -75,3 +135,7 @@ Sure you could do something like [zippey](https://bitbucket.org/sippey/zippey). 
 Firstly, git hooks aren't shared between repos. Not a major, just saying.
 
 Secondly, I don't know how things would behave in all situations. E.g. if you add the `*.pbit` and a hook runs to convert it to the VCS format. What then happens if you want to make a change to it? Anyway, if someone knows better, let me know (or submit a PR).
+
+### Tests
+
+- check that configargparse and use of config files behaves as expected
