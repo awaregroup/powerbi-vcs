@@ -29,7 +29,7 @@ CONVERTERS = {
     }
 
 
-def extract_pbit(pbit_path):
+def extract_pbit(pbit_path, extracted_path):
     """
     Convert a pbit to vcs format
     """
@@ -86,13 +86,42 @@ def compress_pbit(compressed_dir):
             with zd.open(name, 'w') as z:
                 conv.write_vcs_to_raw(os.path.join(compressed_dir, name), z)
 
+def _find_confs(path):
+    """
+    Find all .pbivcs.conf files (if any) furthest down the path, ordered by hierarchy i.e.
+    '/path/to/my/.pbivcs.conf' would come before '/path/to/.pbivcs.conf'
+    """
+    
+    splat = tuple(i for i in os.path.split(os.path.abspath(os.path.normpath(path))) if i)
+    confs = []
+    print(splat)
+    for i in range(1, len(splat)):
+        print(splat[:i])
+        parent = os.path.join(*splat[:i])
+        confpath = os.path.join(parent, '.pbivcs.conf')
+        if os.path.exists(confpath):
+            confs.append(confpath)
+    return confs
+                
 if __name__ == '__main__':
 
-    sampledir = os.path.join(os.path.dirname(__name__), 'samples')
+    import configargparse
 
-    for fname in os.listdir(sampledir):
-        if fname.endswith(".pbit"):
-            print(fname)
-            extract_pbit(os.path.join(sampledir, fname))
-            compress_pbit(os.path.join(sampledir, fname + '.extract'))
-            break
+    parser = configargparse.ArgumentParser(description="A utility for converting *.pbit files to and from a VCS-friendly format")
+    parser.add_argument('input', type=str, help="the input path")
+    parser.add_argument('output', type=str, help="the output path")
+    parser.add_argument('-x', action='store_true', dest="extract", default=True, help="extract pbit at INPUT to VCS-friendly format at OUTPUT")
+    parser.add_argument('-c', action='store_false', dest="extract", default=True, help="compress VCS-friendly format at INPUT to pbit at OUTPUT")
+    parser.add_argument('--over-write', action='store_true', dest="overwrite", help="if present, allow overwriting of OUTPUT. If not, will fail if OUTPUT exists")
+    # parse args first to get input path:
+    input_path = parser.parse_args().input
+    # now set config files for parser:
+    parser._default_config_files = _find_confs(input_path)
+    # now parse again to get final args:
+    args = parser.parse_args()
+    print(args)
+    #if args['extract']:
+    #    extract_pbit(args['input'], args['output'])
+    #else:
+    #    compress_pbit(args['input'], args['output'])
+    
