@@ -120,8 +120,8 @@ if __name__ == '__main__':
     # now parse again to get final args:
     args = parser.parse_args()
     
-    if args['extract']:
-        extract_pbit(args['input'], args['output'])
+    if args.extract:
+        extract_pbit(args.input, args.output)
     else:
-        compress_pbit(args['input'], args['output'])
+        compress_pbit(args.input, args.output)
     
