@@ -15,7 +15,7 @@ It abuses the fact that `*.pbi{tx}` files are (nearly) just (double) ZIP compres
 
 ### Installation
 
-Install python (I recommend Anaconda if you're using Windows). Then
+Install python 3 (I recommend Anaconda if you're using Windows). Then
 
 ```sh
 cd C:\tmp
