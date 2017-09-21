@@ -13,18 +13,9 @@ This repo aims to improve this as much as possible (without tweaking Power BI it
 
 It abuses the fact that `*.pbi{tx}` files are (nearly) just (double) ZIP compressed folders which follow a specific structure.
 
-### Installation
+### Installation [TODO]
 
-Install python 3 (I recommend Anaconda if you're using Windows). Then
-
-```sh
-cd C:\tmp
-git clone https://github.com/kodonnell/powerbi-vcs
-cd powerbi-vcs
-pip install .
-```
-
-[TODO] how to add to path?
+Install python 3 (I recommend Anaconda if you're using Windows). Until someone writes the install script: just run the `pbivcs.py` file
 
 ### What do I get (currently)?
 
