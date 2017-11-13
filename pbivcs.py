@@ -29,7 +29,7 @@ CONVERTERS = {
     }
 
 
-def extract_pbit(pbit_path, outdir):
+def extract_pbit(pbit_path, outdir, overwrite):
     """
     Convert a pbit to vcs format
     """
@@ -38,7 +38,11 @@ def extract_pbit(pbit_path, outdir):
 
     # wipe output directory and create:
     if os.path.exists(outdir):
-        shutil.rmtree(outdir)
+        if overwrite:
+            shutil.rmtree(outdir)
+        else:
+            raise Exception('Output path "{0}" already exists'.format(outdir))
+
     os.mkdir(outdir)
 
     order = []
@@ -63,9 +67,15 @@ def extract_pbit(pbit_path, outdir):
         open(os.path.join(outdir, ".zo"), 'w').write("\n".join(order))
 
 
-def compress_pbit(extracted_path, compressed_path):
+def compress_pbit(extracted_path, compressed_path, overwrite):
     """Convert a vcs store to valid pbit."""
     # TODO: check all paths exists
+
+    if os.path.exists(compressed_path):
+        if overwrite:
+            os.remove(compressed_path)
+        else:
+            raise Exception('Output path "{0}" already exists'.format(compressed_path))
 
     # get order
     with open(os.path.join(extracted_path, ".zo")) as f:
@@ -113,7 +123,7 @@ if __name__ == '__main__':
     parser.add_argument('output', type=str, help="the output path")
     parser.add_argument('-x', action='store_true', dest="extract", default=True, help="extract pbit at INPUT to VCS-friendly format at OUTPUT")
     parser.add_argument('-c', action='store_false', dest="extract", default=True, help="compress VCS-friendly format at INPUT to pbit at OUTPUT")
-    parser.add_argument('--over-write', action='store_true', dest="overwrite", help="if present, allow overwriting of OUTPUT. If not, will fail if OUTPUT exists")
+    parser.add_argument('--over-write', action='store_true', dest="overwrite", default=False, help="if present, allow overwriting of OUTPUT. If not, will fail if OUTPUT exists")
     # parse args first to get input path:
     input_path = parser.parse_args().input
     # now set config files for parser:
@@ -125,6 +135,6 @@ if __name__ == '__main__':
         parser.error('Error! Input and output paths cannot be same')
 
     if args.extract:
-        extract_pbit(args.input, args.output)
+        extract_pbit(args.input, args.output, args.overwrite)
     else:
-        compress_pbit(args.input, args.output)
+        compress_pbit(args.input, args.output, args.overwrite)
