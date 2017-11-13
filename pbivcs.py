@@ -29,13 +29,12 @@ CONVERTERS = {
     }
 
 
-def extract_pbit(pbit_path, extracted_path):
+def extract_pbit(pbit_path, outdir):
     """
     Convert a pbit to vcs format
     """
     # TODO: check ends in pbit
     # TODO: check all expected files are present (in the right order)
-    outdir = pbit_path + '.extract'
 
     # wipe output directory and create:
     if os.path.exists(outdir):
@@ -59,21 +58,21 @@ def extract_pbit(pbit_path, extracted_path):
                 conv = CONVERTERS[starters[0]]
             # convert
             conv.write_raw_to_vcs(zd.read(name), outpath)
-            
+
         # write order files:
         open(os.path.join(outdir, ".zo"), 'w').write("\n".join(order))
 
-def compress_pbit(compressed_dir):
-    """
-    Convert a vcs store to valid pbit.
-    """
+
+def compress_pbit(extracted_path, compressed_path):
+    """Convert a vcs store to valid pbit."""
     # TODO: check all paths exists
 
     # get order
-    order = open(os.path.join(compressed_dir, ".zo")).read().split("\n")
-    
-    with zipfile.ZipFile(compressed_dir + '.recompressed', mode='w', compression=zipfile.ZIP_DEFLATED) as zd:
+    with open(os.path.join(extracted_path, ".zo")) as f:
+        order = f.read().split("\n")
 
+    with zipfile.ZipFile(compressed_path, mode='w',
+                         compression=zipfile.ZIP_DEFLATED) as zd:
         for name in order:
             # get converter:
             conv = CONVERTERS.get(name, None)
@@ -82,9 +81,11 @@ def compress_pbit(compressed_dir):
                 if len(starters) != 1:
                     raise ValueError("TODO")
                 conv = CONVERTERS[starters[0]]
+
             # convert
             with zd.open(name, 'w') as z:
-                conv.write_vcs_to_raw(os.path.join(compressed_dir, name), z)
+                conv.write_vcs_to_raw(os.path.join(extracted_path, name), z)
+
 
 def _find_confs(path):
     """
@@ -119,9 +120,11 @@ if __name__ == '__main__':
     parser._default_config_files = _find_confs(input_path)
     # now parse again to get final args:
     args = parser.parse_args()
-    
+
+    if args.input == args.output:
+        parser.error('Error! Input and output paths cannot be same')
+
     if args.extract:
         extract_pbit(args.input, args.output)
     else:
         compress_pbit(args.input, args.output)
-    
