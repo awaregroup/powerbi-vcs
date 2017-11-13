@@ -5,11 +5,6 @@
     # - adds a warning (with y/n continue feedback) if the .pbix has been updated *after* the latest .pbit.extract is updated. (I.e. they maybe forgot to export the latest .pbit and extract, or exported .pbit but forgot to extract.) Note that this will be obvious in the case of only a single change (as it were) - since .pbix aren't tracked, they'll see no changes to git tracked files.
 
 import zipfile
-import json
-import re
-from io import BytesIO
-import struct
-from lxml import etree
 import os
 import shutil
 import converters

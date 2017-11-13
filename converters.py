@@ -5,7 +5,6 @@ from io import BytesIO
 import struct
 from lxml import etree
 import os
-import shutil
 import ast
 
 
