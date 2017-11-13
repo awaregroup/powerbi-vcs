@@ -9,6 +9,7 @@ import os
 import shutil
 import converters
 
+
 CONVERTERS = {
     'DataModelSchema': converters.JSONConverter('utf-16-le'),
     'DiagramState': converters.JSONConverter('utf-16-le'),
@@ -97,7 +98,7 @@ def _find_confs(path):
     Find all .pbivcs.conf files (if any) furthest down the path, ordered by hierarchy i.e.
     '/path/to/my/.pbivcs.conf' would come before '/path/to/.pbivcs.conf'
     """
-    
+
     splat = tuple(i for i in os.path.split(os.path.abspath(os.path.normpath(path))) if i)
     confs = []
     print(splat)
@@ -108,7 +109,7 @@ def _find_confs(path):
         if os.path.exists(confpath):
             confs.append(confpath)
     return confs
-                
+
 if __name__ == '__main__':
 
     import configargparse
