@@ -7,22 +7,34 @@
 import zipfile
 import os
 import shutil
+import fnmatch
 import converters
 
 
-CONVERTERS = {
-    'DataModelSchema': converters.JSONConverter('utf-16-le'),
-    'DiagramState': converters.JSONConverter('utf-16-le'),
-    'Report/Layout': converters.JSONConverter('utf-16-le'),
-    'Report/LinguisticSchema': converters.XMLConverter('utf-16-le', False),
-    '[Content_Types].xml': converters.XMLConverter('utf-8-sig', True),
-    'SecurityBindings': converters.NoopConverter(),
-    'Settings': converters.NoopConverter(),
-    'Version': converters.NoopConverter(),
-    'Report/StaticResources/': converters.NoopConverter(),
-    'DataMashup': converters.DataMashupConverter(),
-    'Metadata': converters.MetadataConverter()
-    }
+CONVERTERS = [
+    ('DataModelSchema', converters.JSONConverter('utf-16-le')),
+    ('DiagramState', converters.JSONConverter('utf-16-le')),
+    ('Report/Layout', converters.JSONConverter('utf-16-le')),
+    ('Report/LinguisticSchema', converters.XMLConverter('utf-16-le', False)),
+    ('[Content_Types].xml', converters.XMLConverter('utf-8-sig', True)),
+    ('SecurityBindings', converters.NoopConverter()),
+    ('Settings', converters.NoopConverter()),
+    ('Version', converters.NoopConverter()),
+    ('Report/StaticResources/', converters.NoopConverter()),
+    ('DataMashup', converters.DataMashupConverter()),
+    ('Metadata', converters.MetadataConverter()),
+    ('*.json', converters.JSONConverter('utf-8'))
+]
+
+
+def find_converter(path):
+    for pattern, converter in CONVERTERS:
+        if fnmatch.fnmatch(path, pattern):
+            conv = converter
+            break
+    else:
+        conv = converters.NoopConverter()
+    return conv
 
 
 def extract_pbit(pbit_path, outdir, overwrite):
@@ -50,12 +62,7 @@ def extract_pbit(pbit_path, outdir, overwrite):
             order.append(name)
             outpath = os.path.join(outdir, name)
             # get converter:
-            conv = CONVERTERS.get(name, None)
-            if conv is None:
-                starters = [i for i in CONVERTERS.keys() if name.startswith(i)]
-                if len(starters) != 1:
-                    raise ValueError("TODO")
-                conv = CONVERTERS[starters[0]]
+            conv = find_converter(name)
             # convert
             conv.write_raw_to_vcs(zd.read(name), outpath)
 
@@ -81,13 +88,7 @@ def compress_pbit(extracted_path, compressed_path, overwrite):
                          compression=zipfile.ZIP_DEFLATED) as zd:
         for name in order:
             # get converter:
-            conv = CONVERTERS.get(name, None)
-            if conv is None:
-                starters = [i for i in CONVERTERS.keys() if name.startswith(i)]
-                if len(starters) != 1:
-                    raise ValueError("TODO")
-                conv = CONVERTERS[starters[0]]
-
+            conv = find_converter(name)
             # convert
             with zd.open(name, 'w') as z:
                 conv.write_vcs_to_raw(os.path.join(extracted_path, name), z)
