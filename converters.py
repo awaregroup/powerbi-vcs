@@ -5,7 +5,6 @@ from io import BytesIO
 import struct
 from lxml import etree
 import os
-import shutil
 import ast
 
 
@@ -18,21 +17,23 @@ class Converter:
         raise NotImplementedError("Converter.vcs_to_raw must be extended!")
 
     def write_raw_to_vcs(self, b, vcspath, *args, **kwargs):
-        os.makedirs(os.path.dirname(vcspath), exist_ok=True) 
+        os.makedirs(os.path.dirname(vcspath), exist_ok=True)
         with open(vcspath, 'wb') as f:
             f.write(self.raw_to_vcs(b, *args, **kwargs))
-            
+
     def write_vcs_to_raw(self, vcspath, rawzip, *args, **kwargs):
         with open(vcspath, 'rb') as f:
             rawzip.write(self.vcs_to_raw(f.read(), *args, **kwargs))
+
 
 class NoopConverter(Converter):
 
     def raw_to_vcs(self, b):
         return b
-    
+
     def vcs_to_raw(self, b):
         return b
+
 
 class XMLConverter(Converter):
 
@@ -70,7 +71,7 @@ class XMLConverter(Converter):
 
     def vcs_to_raw(self, b):
         """ Convert from the csv version on xml to the raw form - i.e. not pretty printing and getting the encoding right """
-    
+
         parser = etree.XMLParser(remove_blank_text=True)
         root = etree.fromstring(b, parser) # note that vcs is always in UTF-8, which is encoded in the xml, so no need to specify
         # We do the decode and encode at the end so that e.g. if it's meant to be 'utf-8-sig', lxml_enc will be 'utf-8'
@@ -81,7 +82,7 @@ class XMLConverter(Converter):
 class JSONConverter(Converter):
 
     EMBEDDED_JSON_KEY = '__powerbi-vcs-embedded-json__'
-    SORT_KEYS = False # format seems dependent on key order which is ... odd.
+    SORT_KEYS = False  # format seems dependent on key order which is ... odd.
 
     def __init__(self, encoding):
         self.encoding = encoding
@@ -105,7 +106,7 @@ class JSONConverter(Converter):
             try:
                 d = json.loads(v)
                 if isinstance(d, (dict, list)):
-                    return { self.EMBEDDED_JSON_KEY: d }
+                    return {self.EMBEDDED_JSON_KEY: d}
                 else:
                     return v
             except Exception as e:
@@ -116,17 +117,17 @@ class JSONConverter(Converter):
             return [self._jsonify_embedded_json(vv) for vv in v]
         else:
             return v
-    
+
     def _undo_jsonify_embedded_json(self, v):
         """
-        Unfo jsonify_embedded_json e.g. 
+        Unfo jsonify_embedded_json e.g.
 
         ```
-        x: { EMBEDDED_JSON_KEY: { "y": 1 } } 
+        x: { EMBEDDED_JSON_KEY: { "y": 1 } }
         ```
 
         becomes
-    
+
         ```
         x: "{\"y\": 1 }"
         ```
@@ -139,14 +140,13 @@ class JSONConverter(Converter):
             return [self._undo_jsonify_embedded_json(vv) for vv in v]
         else:
             return v
- 
+
     def raw_to_vcs(self, b):
         """ Converts raw json from pbit into that ready for vcs - mainly just prettification """
 
         return json.dumps(self._jsonify_embedded_json(json.loads(b.decode(self.encoding))), indent=2,
-                         ensure_ascii=False, # so embedded e.g. copyright symbols don't be munged to unicode codes
-                         sort_keys=self.SORT_KEYS
-                         ).encode('utf-8')
+                          ensure_ascii=False,  # so embedded e.g. copyright symbols don't be munged to unicode codes
+                          sort_keys=self.SORT_KEYS).encode('utf-8')
 
     def vcs_to_raw(self, b):
         """ Converts vcs json to that used in pbit - mainly just minification """
@@ -154,13 +154,13 @@ class JSONConverter(Converter):
 
 
 class MetadataConverter(Converter):
-    
+
     def raw_to_vcs(self, b):
         """ The metadata is nearly readable anyway, but let's just split into multiple lines """
-        
+
         # repr it so bytes are displayed in ascii
         s = repr(b)
-        
+
         # now split it nicely into line items
         if '\n' in s:
             raise ValueError("TODO: '\n' is used as a terminator but already exists in string! Someone needs to write some code to dynamically pick the (possibly multi-byte) terminator ...")
@@ -174,7 +174,7 @@ class MetadataConverter(Converter):
 
     def vcs_to_raw(self, b):
         """ Undo the above prettification """
-        
+
         return ast.literal_eval(b.decode('ascii').replace('\n', ''))
 
 
@@ -198,7 +198,7 @@ class DataMashupConverter(Converter):
         'Config/Package.xml': XMLConverter('utf-8-sig', True),
         'Formulas/Section1.m': NoopConverter()
     }
-    
+
     def write_raw_to_vcs(self, b, outdir):
         """ Convert the raw format into multiple separate files that are more readable """
 
@@ -220,7 +220,7 @@ class DataMashupConverter(Converter):
         end3 = start3 + len3
         xml2 = b[start3:end3]
         extra = b[end3:]
-                                
+
         # extract header zip:
         with zipfile.ZipFile(BytesIO(zip1)) as zd:
             order = []
@@ -231,16 +231,16 @@ class DataMashupConverter(Converter):
                 os.makedirs(os.path.dirname(outfile), exist_ok=True) # create folder if needed
                 conv = self.CONVERTERS[name]
                 conv.write_raw_to_vcs(zd.read(name), outfile)
-                
+
         # write order:
         open(os.path.join(outdir, ".zo"), 'w').write("\n".join(order))
 
         # now write the xmls and bytes between:
-        #open(os.path.join(outdir, 'DataMashup', "1.int"), 'wb').write(b[4:8])
+        # open(os.path.join(outdir, 'DataMashup', "1.int"), 'wb').write(b[4:8])
         XMLConverter('utf-8-sig', True).write_raw_to_vcs(xml1, os.path.join(outdir, "3.xml"))
         XMLConverter('utf-8-sig', True).write_raw_to_vcs(xml2, os.path.join(outdir, "6.xml"))
         NoopConverter().write_raw_to_vcs(extra, os.path.join(outdir, "7.bytes"))
-            
+
     def write_vcs_to_raw(self, vcs_dir, rawzip):
 
         # zip up the header bytes:
