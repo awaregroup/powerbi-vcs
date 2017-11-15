@@ -57,7 +57,7 @@ class XMLConverter(Converter):
         # If no encoding is specified in the XML, all is well - we can decode it then pass the unicode to the parser.
         # However, if encoding is specified, then lxml won't accept an already decoded string - so we have to pass it
         # the bytes (and let it decode).
-        m = re.match(b'^.{,4}\<\?xml [^\>]*encoding="([a-z0-9_\-]+)"', b)
+        m = re.match(b'^.{,4}\<\?xml [^\>]*encoding=[\'"]([a-z0-9_\-]+)[\'"]', b)
         if m:
             xml_encoding = m.group(1).decode('ascii')
             if xml_encoding.lower() != self.lxml_encoding.lower():

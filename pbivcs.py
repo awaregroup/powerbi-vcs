@@ -102,9 +102,7 @@ def _find_confs(path):
 
     splat = tuple(i for i in os.path.split(os.path.abspath(os.path.normpath(path))) if i)
     confs = []
-    print(splat)
     for i in range(1, len(splat)):
-        print(splat[:i])
         parent = os.path.join(*splat[:i])
         confpath = os.path.join(parent, '.pbivcs.conf')
         if os.path.exists(confpath):
