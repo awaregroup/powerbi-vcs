@@ -190,7 +190,14 @@ class DataMashupConverter(Converter):
         - 4 null bytes
         - 4 bytes representing little-endian int for length of next xml
         - xml of this length
-        - not sure what the remainder is ...
+        - the four bytes 16 00 00 00
+        - a zip End (!) Of Central Directory record (indicated by the bytes 50 4b 05 06)
+          https://en.wikipedia.org/wiki/Zip_(file_format)#End_of_central_directory_record_(EOCD)
+          which is a bit surprising in this location, since there's no associated start of the zip file.
+          After some experiments, Power BI will not work if everything after 16 00 00 00 is omitted,
+          and also not if everything after 50 4b 05 06 is omitted, claiming the file has been corrupted.
+          If the tail of the file is replaced with that of a different .pbix file, there are no noticeable
+          errors in opening the modified .pbix file.
     """
 
     CONVERTERS = {
