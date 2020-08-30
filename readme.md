@@ -6,6 +6,18 @@ We're really busy at the moment (Jan 2018) and have put development of this on h
 - fork it and make it better!
 - use the port (https://github.com/Togusa09/powerbi-vcs-dotnet) which may be more maintained etc.
 
+### File Format Specification
+
+The PBIX and PBIT files are [Open Packaging Conventions files](https://en.wikipedia.org/wiki/Open_Packaging_Conventions). Within a PBIX container there are two binary files of particular note, which would require further conversion for storage within a VCS. Some of this work can be skipped by saving the file as a PBIT.
+
+#### Binary blob format specifications
+ - DataMashup: [MS-QDEFF](https://interoperability.blob.core.windows.net/files/MS-QDEFF/%5bMS-QDEFF%5d.pdf).
+ - DataModel: [MS-XLDM](https://interoperability.blob.core.windows.net/files/MS-XLDM/%5bMS-XLDM%5d.pdf)
+ 
+These can be used to further enhance the converters, if anyone ever has the time. There is no guarentee these formats are exact or current. The specifications are intended for the streams embedded in Excel files. However they are closely related (and may be identical).
+
+&nbsp;
+
 --- 
 
 > NOTE: this is not yet ready to be used!
