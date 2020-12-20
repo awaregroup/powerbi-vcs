@@ -78,6 +78,25 @@ pbivcs -c apples.pbit.vcs apples.pbit
 
 (and yes, since you're super careful, you can control how overwrites etc. happen).
 
+### Git textconv driver support
+This option dumps the extracted file contents to standard out to allow for better diffs in git of files which were commited in the binary PBIT or PBIX format.
+
+Add to repo .gitattributes file:
+```
+*.pbit diff=pbit
+*.pbix diff=pbit
+```
+
+Add to global or local .gitconfig file:
+```
+[diff "pbit"]
+	textconv = pbivcs -s
+```
+
+Diffs in git will do their diff on the extracted file content. Textconv diffs are only a visual guide, and can't be used to merge changes, but this provides better insight into what has changed in the power bi report.
+
+Documentation of git textconv drivers [https://git.wiki.kernel.org/index.php/Textconv]
+
 ### Other cool features
 
 

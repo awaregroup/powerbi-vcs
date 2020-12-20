@@ -16,6 +16,10 @@ class Converter:
     def vcs_to_raw(self, b, *args, **kwargs):
         raise NotImplementedError("Converter.vcs_to_raw must be extended!")
 
+    def raw_to_textconv(self, b, *args, **kwargs):
+        # Fall back to vcs format if no special handling
+        return self.raw_to_vcs(b, *args, **kwargs).decode('utf-8')
+
     def write_raw_to_vcs(self, b, vcspath, *args, **kwargs):
         os.makedirs(os.path.dirname(vcspath), exist_ok=True)
         with open(vcspath, 'wb') as f:
@@ -25,6 +29,8 @@ class Converter:
         with open(vcspath, 'rb') as f:
             rawzip.write(self.vcs_to_raw(f.read(), *args, **kwargs))
 
+    def write_raw_to_textconv(self, b, outio, *args, **kwargs):
+        print(self.raw_to_textconv(b, *args, **kwargs), file=outio)
 
 class NoopConverter(Converter):
 
@@ -34,6 +40,12 @@ class NoopConverter(Converter):
     def vcs_to_raw(self, b):
         return b
 
+    def raw_to_textconv(self, b, *args, **kwargs):
+        import hashlib
+        my_SHA256 = hashlib.sha256()
+        my_SHA256.update(b)
+
+        return "File hash: " + my_SHA256.hexdigest() + "\n"
 
 class XMLConverter(Converter):
 
@@ -152,6 +164,12 @@ class JSONConverter(Converter):
         """ Converts vcs json to that used in pbit - mainly just minification """
         return json.dumps(self._undo_jsonify_embedded_json(json.loads(b.decode('utf-8'))), separators=(',', ':'), ensure_ascii=False, sort_keys=self.SORT_KEYS).encode(self.encoding)
 
+    def raw_to_textconv(self, b):
+        """ Converts raw json from pbit into that ready for diffing - mainly just prettification """
+
+        return json.dumps(self._jsonify_embedded_json(json.loads(b.decode(self.encoding))), indent=2,
+                          ensure_ascii=False,  # so embedded e.g. copyright symbols don't be munged to unicode codes
+                          sort_keys=True) + "\n"
 
 class MetadataConverter(Converter):
 
@@ -287,3 +305,46 @@ class DataMashupConverter(Converter):
 
         # write the rest:
         NoopConverter().write_vcs_to_raw(os.path.join(vcs_dir, "7.bytes"), rawzip)
+
+
+    def write_raw_to_textconv(self, b, outio):
+        """ Convert the raw format into readable text for comparison"""
+
+        if b[:4] != b'\x00\x00\x00\x00':
+            raise ValueError("TODO")
+        len1 = int.from_bytes(b[4:8], byteorder="little")
+        start1 = 8
+        end1 = start1 + len1
+        zip1 = b[start1:end1]
+        start2 = end1 + 4
+        len2 = int.from_bytes(b[end1:start2], byteorder="little")
+        end2 = start2 + len2
+        xml1 = b[start2:end2]
+        b8 = b[end2:end2+8]
+        start3 = end2 + 12
+        len3 = int.from_bytes(b[end2 + 8: start3], byteorder="little")
+        if int.from_bytes(b[end2:end2+4], "little") - len3 != 34:
+            raise ValueError("TODO")
+        end3 = start3 + len3
+        xml2 = b[start3:end3]
+        extra = b[end3:]
+
+        # extract header zip:
+        with zipfile.ZipFile(BytesIO(zip1)) as zd:
+            order = []
+            # read items (in the order they appear in the archive)
+            for name in zd.namelist():
+                order.append(name)
+                print("Filename: " + name, file=outio)
+                conv = self.CONVERTERS[name]
+                conv.write_raw_to_textconv(zd.read(name), outio)
+
+        # now write the xmls and bytes between:
+        # open(os.path.join(outdir, 'DataMashup', "1.int"), 'wb').write(b[4:8])
+        print("DataMashup -> XML Block 1", file=outio)
+        XMLConverter('utf-8-sig', True).write_raw_to_textconv(xml1, outio)
+        print("DataMashup -> XML Block 2", file=outio)
+        XMLConverter('utf-8-sig', True).write_raw_to_textconv(xml2, outio)
+        print("DataMashup -> Extra Content", file=outio)
+        NoopConverter().write_raw_to_textconv(extra, outio)
+        print(file=outio)

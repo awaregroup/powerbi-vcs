@@ -7,6 +7,7 @@
 import zipfile
 import os
 import shutil
+import sys
 import fnmatch
 import converters
 
@@ -16,7 +17,7 @@ CONVERTERS = [
     ('DiagramState', converters.JSONConverter('utf-16-le')),
     ('Report/Layout', converters.JSONConverter('utf-16-le')),
     ('Report/LinguisticSchema', converters.XMLConverter('utf-16-le', False)),
-    ('[Content_Types].xml', converters.XMLConverter('utf-8-sig', True)),
+    ('[[]Content_Types[]].xml', converters.XMLConverter('utf-8-sig', True)),
     ('SecurityBindings', converters.NoopConverter()),
     ('Settings', converters.NoopConverter()),
     ('Version', converters.NoopConverter()),
@@ -93,6 +94,24 @@ def compress_pbit(extracted_path, compressed_path, overwrite):
             with zd.open(name, 'w') as z:
                 conv.write_vcs_to_raw(os.path.join(extracted_path, name), z)
 
+def textconv_pbit(pbit_path, outio):
+    """
+    Convert a pbit to a text format suitable for diffing
+    """
+    # TODO: check ends in pbit
+
+    order = []
+    
+    with zipfile.ZipFile(pbit_path, compression=zipfile.ZIP_DEFLATED, mode='r') as zd:
+
+        # read items (in the order they appear in the archive)
+        for name in zd.namelist():
+            order.append(name)
+            print("Filename: " + name, file=outio)
+            # get converter:
+            conv = find_converter(name)
+            # convert
+            conv.write_raw_to_textconv(zd.read(name), outio)
 
 def _find_confs(path):
     """
@@ -115,9 +134,10 @@ if __name__ == '__main__':
 
     parser = configargparse.ArgumentParser(description="A utility for converting *.pbit files to and from a VCS-friendly format")
     parser.add_argument('input', type=str, help="the input path")
-    parser.add_argument('output', type=str, help="the output path")
+    parser.add_argument('output', type=str, help="the output path", nargs="?", default=None)
     parser.add_argument('-x', action='store_true', dest="extract", default=True, help="extract pbit at INPUT to VCS-friendly format at OUTPUT")
     parser.add_argument('-c', action='store_false', dest="extract", default=True, help="compress VCS-friendly format at INPUT to pbit at OUTPUT")
+    parser.add_argument('-s', action='store_true', dest="textconv", default=False, help="extract pbit at INPUT to textconv format on stdout")
     parser.add_argument('--over-write', action='store_true', dest="overwrite", default=False, help="if present, allow overwriting of OUTPUT. If not, will fail if OUTPUT exists")
     # parse args first to get input path:
     input_path = parser.parse_args().input
@@ -126,10 +146,16 @@ if __name__ == '__main__':
     # now parse again to get final args:
     args = parser.parse_args()
 
-    if args.input == args.output:
-        parser.error('Error! Input and output paths cannot be same')
-
-    if args.extract:
-        extract_pbit(args.input, args.output, args.overwrite)
+    if args.textconv:
+        textconv_pbit(args.input, sys.stdout)
     else:
-        compress_pbit(args.input, args.output, args.overwrite)
+        if args.output is None:
+            parser.error('the following arguments are required: output')
+
+        if args.input == args.output:
+            parser.error('Error! Input and output paths cannot be same')
+
+        if args.extract:
+            extract_pbit(args.input, args.output, args.overwrite)
+        else:
+            compress_pbit(args.input, args.output, args.overwrite)
